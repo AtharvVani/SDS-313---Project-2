@@ -1,0 +1,195 @@
+---
+title: "Project 2"
+author: "Atharv Vani"
+date: "November 14, 2024"
+output:
+  html_document:
+    toc: true         
+    toc_float: true   
+    toc_depth: 3      
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warnings=FALSE)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(tidyverse)
+
+```
+
+## 1. Introduction
+
+Introduce the context of your dataset and describe its source(s). Include hyperlink(s) for where you retrieved it from as well as a picture (with citation directly below the image) related to your topic. Why did you pick this dataset to analyze, and what will you be investigating?
+
+```{r}
+ecad_data <- read.csv("/Users/atharvvani/SDS313/Project2DataECAD.csv")
+```
+
+The raw dataset I plan to use for my project was downloaded from the official City of Austin open data portal. The dataset was obtained by the City of Austin and published in accordance with  the Austin City Code 6-7's Energy Conservation Audit and Disclosure Ordinance. To provide some context for this dataset, this ordinance was established for the purpose of improving energy efficiency of homes and buildings are dependent on Austin Energy for their needs. As the dataset has information on residential buildings, I'll investigate the related variables through different analyses.
+
+![Citation: <https://data.austintexas.gov/Utilities-and-City-Services/2016-ECAD-Residential-Energy-Audit-Data/bub6-qjuh/about_data>](https://www.ecadspecialist.com/sites/default/files/styles/sc_1280x440/public/slide/slide2_22.jpg?itok=iGh_VC2t)
+
+## 2. Data Preparation
+
+Describe how you obtained the data and imported it into R (either what specifically you downloaded or how you scraped it). Then detail the steps you took to process your data (e.g., what you did do with NA values, dates, factors, strings, renaming variables, etc.?). Include a brief description of the challenges you faced when preparing the data.
+
+In order to obtain the dataset and import it into R, I went to the City of Austin's open data portal and simply clicked download for the csv file. The website also provides a list of information below on the 40 variables the dataset has. It also informs the reader that the rows represent 3,219 various buildings in the City of Austin that have been included and reported in the audit. After reading the csv file from my downloads folder and reading the data, I processed the variables in different ways. For strings, I filtered the strings based on the substring that was relevant to my comparison across the different address which was similar to my process for dates. For example, "2016" could be be used as a filter for the date and only addresses with 2016 as the submission date would be included in the dataset providing a more accurate analysis for the year. My report did not have to rename any variables in the new subset as most variables were properly described and kept brief.
+
+## 3. Variable Descriptions
+
+```{r}
+columns_to_select <- c("SQFT", "Cooling.System", "Heating.system", "Window.Type", "Toilet.Type","Submission.Date", "Built", "Auditor", "Average.R.Value" )
+
+subset_data <- ecad_data |>
+  filter(str_detect(Street.Address, "78751$")) |>
+  select(all_of(columns_to_select))
+
+
+subset_data <- subset_data |>
+  filter(str_detect(Submission.Date, "12:00:00 AM$")) %>%
+  mutate(
+    Submission.Date2 = as.Date(Submission.Date, format = "%m/%d/%y"),
+    Built.Before.1980 = Built < 1980)
+
+
+
+details <- data.frame(
+  Type = sapply(subset_data, class),
+  Description = c(
+    "Square Feet",
+    "Type of Cooling system",
+    "Type of Heating system",
+    "Type of Window",
+    "Type of Toilet", 
+    "Date of Submission",
+    "When the building was built",
+    "Name of Auditor",
+    "Average R Value",
+    "Date of Submission without time stamp",
+    "Whether the Building is Modern or Old"
+  )
+)
+
+kable(
+  details,
+  col.names = c("Data Type", "Description"),
+  align = c("l", "l")
+)
+
+```
+
+## 4. Univariate Analyses
+
+```{r}
+plot_univariate <- function(df) {
+  for (var in colnames(df)) {
+    if (is.numeric(df[[var]])) {
+      print(
+        ggplot(df, aes(x = .data[[var]])) +
+          geom_histogram(binwidth = 10) +
+            ggtitle(paste("Histogram of", var))
+      )
+    } else if (is.character(df[[var]]) || is.factor(df[[var]])) {
+      print(
+        ggplot(df, aes(x = as.factor(.data[[var]]))) +
+          geom_bar() +
+          ggtitle(paste("Bar Plot of", var)) +
+          xlab(var) +
+          theme(
+            axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.x = element_blank()
+          )
+      )
+    }
+  }
+}
+
+
+columns_to_select2 <- c("SQFT", "Built", "Average.R.Value","Window.Type")
+subset_data2 <- subset_data |>
+  select(all_of(columns_to_select2))
+plot_univariate(subset_data2)
+
+```
+
+The summary statistics for the graphs are provided below. 
+
+**SQFT**: The distribution of SQFT is heavily skewed right.
+Min = `r min(subset_data2$SQFT, na.rm = TRUE)`, Max = `r max(subset_data2$SQFT, na.rm = TRUE)`, Mean = `r mean(subset_data2$SQFT, na.rm = TRUE)`, SD = `r sd(subset_data2$SQFT, na.rm = TRUE)`
+
+**Built**: The distribution of Built is approximately bi-modal and skewed right.
+Min = `r min(subset_data2$Built, na.rm = TRUE)`, Max = `r max(subset_data2$Built, na.rm = TRUE)`, Mean = `r mean(subset_data2$Built, na.rm = TRUE)`, SD = `r sd(subset_data2$Built, na.rm = TRUE)`
+
+**Average R Value**: The distribution of the Average R Value is approximately symmetrical.
+Min = `r min(subset_data2$Average.R.Value, na.rm = TRUE)`, Max = `r max(subset_data2$Average.R.Value, na.rm = TRUE)`, Mean = `r mean(subset_data2$Average.R.Value, na.rm = TRUE)`, SD = `r sd(subset_data2$Average.R.Value, na.rm = TRUE)`
+
+**Window Type**: The distribution of the Window Type has two distinct peaks showing many buildings have a certain window type.
+
+
+## 5. Bivariate Analyses
+
+```{r}
+variable_pairs <- list(c("SQFT", "Built"), c("SQFT", "Average.R.Value"), c("Built", "Average.R.Value"), c("Window.Type","Built"))
+
+plot_bivariate <- function(df, var_pairs) {
+  for (pair in var_pairs) {
+    var1 <- pair[1]
+    var2 <- pair[2]
+    if (is.numeric(df[[var1]]) && is.numeric(df[[var2]])) {
+      print(ggplot(df, aes(x = .data[[var1]], y = .data[[var2]])) +
+              geom_point() +
+              ggtitle(paste("Scatter Plot of", var1, "vs", var2)))
+    } else {
+      print(ggplot(df, aes(x = .data[[var1]], y = .data[[var2]])) +
+              geom_boxplot() + 
+              theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+              ggtitle(paste("Box Plot of", var1, "and", var2)))
+    }
+  }
+}
+
+plot_bivariate(subset_data,variable_pairs)
+
+```
+
+For the bivariate analyses, the information regarding the distribution is provided below.
+
+**1. SQFT Vs Built**: The scatterplot shows the relationship between square feet and the year built. The correlation coefficient is `r cor(subset_data$SQFT, subset_data$Built, use = "complete.obs")`
+**2. SQFT vs Average R Value**: The scatterplot shows the relationship between square footage and average R-value. The correlation coefficient is `r cor(subset_data$SQFT, subset_data$Average.R.Value, use = "complete.obs")`
+**3. Built vs Average R value**: The scatterplot shows the relationship between the year built and average R-value. The correlation coefficient is `r cor(subset_data$Built, subset_data$Average.R.Value, use = "complete.obs")`
+**4. Window Type vs Built**: The boxplot shows the distribution of year built for each window type. From this we can derive the window with the most occurences, `r names(sort(table(na.omit(subset_data$Window.Type)), decreasing = TRUE))[1]`.
+
+
+## 6. Reproducibility Resources
+Hyperlink: https://github.com/AtharvVani/SDS-313---Project-2
+
+## 7. Elements
+A. 4 of more in-line codes were used in report in the univariate and bivariate analysis sections to report statistics related to the graphs. 
+
+D. Two new variables of interest were created using mutate. The two variables are "Submission.Date2" and "Built.Before.1980". The first variable is a filtered version of the submission date using the string. The stamp was excluded for the new column allowing dates to be compared. The second variable tells us whether the building specified in the address was built before 1980 which allows us to classify the time period at which it ws built using a boolean. 
+
+F. I parsed the subset of data and filtered it based on the string of the date/time of the submission date. I excluded the time stamp in the new column I created which allows dates to be compared without the time stamp. 
+
+G. I parsed the subset of data by a string variable of interest based on the zip code of the address. The zip code that I filtered the dataset using was 78751 which includes part of Travis County and the University of Texas at Austin. 
+
+E. The table below reports the number of NA values for each variable in the raw dataset. This would give insight into which NA values to exclude in statistical calculations by using complete.obs. These values may be missing as the auditor for the city of Austin's energy report may have neglected to collect this form of data during inspecion at the specified address. 
+```{r}
+na_report <- data.frame(Variable = character(), NA_Count = numeric(), stringsAsFactors = FALSE)
+for (var in colnames(ecad_data)) {
+  na_count <- sum(is.na(ecad_data[[var]]))
+  na_report <- rbind(na_report, data.frame(Variable = var, NA_Count = na_count))
+}
+print(na_report)
+
+```
+
+
+
+## 8. Conclusion
+To summarize the major findings of my analysis, the relationships among the majority of my variables of interest show an associative relationship and not one where one impacts the other. In this sense, it does not match any exceptions but rather it reveals insight into the address provided. For example, using the two variables created and by generating a Boolean after parsing the string, an important finding was derived regarding the time period at which the submission for the audit was recorded. I found that the majority of addresses with the area code of 78712 had a submission date which could be categorized as older buildings as they were built before 1980. 
+
+## 9. References
+1. https://data.austintexas.gov/Utilities-and-City-Services/2016-ECAD-Residential-Energy-Audit-Data/bub6-qjuh/about_data
+2. https://dplyr.tidyverse.org/reference/index.html
